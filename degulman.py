@@ -72,8 +72,9 @@ def decrypt(stream: bytes, table: list):
     return decrypted.tobytes(), key.tobytes()
 
 class G2Pack:
-    def __init__(self):
+    def __init__(self, game):
         """creating blank file"""
+        self.game = game
         self.HEADER = b''
         self.fstruct_ptr = 0
         self.totalFiles = 0
@@ -91,16 +92,23 @@ class G2Pack:
             if self.HEADER != b'PACK':
                 raise ValueError('Not a Gulman 2 pack file!')
             self.fstruct_ptr = struct.unpack('I', self.header[4:8])[0]
-            self.totalFiles = struct.unpack('I', self.header[9:13]+b'\x00')[0]
+            if self.game == 'sw':
+                self.totalFiles = struct.unpack('I', self.header[8:12])[0] // 64 # swiborg
+            elif self.game == 'g2':
+                self.totalFiles = struct.unpack('I', self.header[9:13]+b'\x00')[0]
             self.header = b''
             self.f.seek(self.fstruct_ptr)
             self.fstruct = self.f.read()
             for self.i in range(self.totalFiles):
-                self.fname = self.fstruct[0x100*self.i:0x100*self.i+0xf8]
+                if self.game == 'sw':
+                    self.fname = self.fstruct[0x40*self.i:0x40*self.i+0x38]    # swiborg
+                elif self.game == 'g2':
+                    self.fname = self.fstruct[0x100*self.i:0x100*self.i+0xf8]
                 self.fname = self.fname.replace(b'\x00', b'').decode('cp1251')
-                self.foffset = struct.unpack('I', self.fstruct[0x100*self.i+0xf8:0x100*self.i+0xfc])[0]
-                self.fsize = struct.unpack('I', self.fstruct[0x100*self.i+0xfc:0x100*self.i+0x100])[0]
+                self.foffset = struct.unpack('I', self.fstruct[0x40*self.i+0x38:0x40*self.i+0x3c])[0]
+                self.fsize = struct.unpack('I', self.fstruct[0x40*self.i+0x3c:0x40*self.i+0x40])[0]
                 self.files[self.i] = (self.fname, self.foffset, self.fsize)
+                print((self.fname, self.foffset, self.fsize))
 
     def unpack(self, d: str):
         """unpacks pack file to the given directory"""
@@ -159,29 +167,35 @@ class G2Pack:
             self.totalFiles = self.fnum
             pak.write(self.HEADER)
             pak.write(struct.pack('I', self.fstruct_ptr))
-            pak.write(struct.pack('I', self.totalFiles<<8))
+            if self.game == 'sw':
+                pak.write(struct.pack('I', self.totalFiles*64))
+            elif self.game == 'g2':
+                pak.write(struct.pack('I', self.totalFiles<<8))
             pak.write(self.buffer)
             self.buffer = b''
             for self.i in range(self.totalFiles):
                 self.pathb = self.filesdict[self.i][0].replace(self.d, '').encode('cp1251').replace(b'\x5c', b'/')[1:]
-                self.pathb = self.pathb+(b'\x00'*(248 - len(self.pathb)))
+                if self.game == 'sw':
+                    self.pathb = self.pathb+(b'\x00'*(56 - len(self.pathb)))
+                elif self.game == 'g2':
+                    self.pathb = self.pathb+(b'\x00'*(248 - len(self.pathb)))
                 pak.write(self.pathb)
                 pak.write(struct.pack('II', self.filesdict[self.i][1], self.filesdict[self.i][2]))
 
-def export():
+def export(game):
     fname = ''
     while not os.path.isfile(fname):
         print('Welcome to DeGulman2, this script will unpack files from .pak archives.')
         fname = input('Provide path to your .pak file:  ')
     directory = fname.replace('.pak', '')
     createFolders(directory)
-    g2pack = G2Pack()
+    g2pack = G2Pack(game)
     g2pack.read(fname)
     g2pack.unpack(directory)
     input('Done!')
 
-def import_():
-    g2pack = G2Pack()
+def import_(game):
+    g2pack = G2Pack(game)
     d = ''
     while not os.path.isdir(d):
         print('Welcome to DeGulman2, this script will pack files directory.')
@@ -192,12 +206,12 @@ def import_():
 if __name__ == '__main__':
     warnings.filterwarnings("ignore")
     func = ''
+    game = ''
     while not func in ('import','export'):
         func = input('Choose function [import or export]:  ').lower()
-        match func:
-            case 'import':
-                import_()
-            case 'export':
-                export()
-            case _:
-                print(f'Unknown function {func}')
+    while not game in ('g2','sw'):
+        game = input('Choose game. g2 - for gulman 2, sw - for swiborg - first blood.\nGame: ').lower()
+    if func == 'import':
+        import_(game)
+    if func == 'export':
+        export(game)
