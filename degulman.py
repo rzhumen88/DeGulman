@@ -79,6 +79,11 @@ class G2Pack:
         self.fstruct_ptr = 0
         self.totalFiles = 0
         self.files = {}
+
+    def getRaw(self, offset:int, size:int):
+        with open(self.pak, 'rb') as self.f:
+            self.f.seek(offset)
+            return self.f.read(size)
         
     def read(self, pak: str):
         """reading data from file into structured data"""
@@ -88,7 +93,7 @@ class G2Pack:
             self.header = self.f.read(12)
             self.HEADER = self.header[:4]
             if self.HEADER == b'2PAK':
-                raise ValueError("Gulman 3 and Verus Engine pack files aren't supported yet!")
+                raise ValueError("Gulman 3 and Verus Engine pack files aren't supported!")
             if self.HEADER != b'PACK':
                 raise ValueError('Not a Gulman 2 pack file!')
             self.fstruct_ptr = struct.unpack('I', self.header[4:8])[0]
@@ -97,18 +102,22 @@ class G2Pack:
             elif self.game == 'g2':
                 self.totalFiles = struct.unpack('I', self.header[9:13]+b'\x00')[0]
             self.header = b''
-            self.f.seek(self.fstruct_ptr)
-            self.fstruct = self.f.read()
             for self.i in range(self.totalFiles):
+                self.f.seek(self.fstruct_ptr)
+                self.fstruct = self.f.read()
                 if self.game == 'sw':
                     self.fname = self.fstruct[0x40*self.i:0x40*self.i+0x38]    # swiborg
+                    self.foffset = struct.unpack('I', self.fstruct[0x40*self.i+0x38:0x40*self.i+0x3c])[0]
+                    self.fsize = struct.unpack('I', self.fstruct[0x40*self.i+0x3c:0x40*self.i+0x40])[0]
                 elif self.game == 'g2':
                     self.fname = self.fstruct[0x100*self.i:0x100*self.i+0xf8]
+                    self.foffset = struct.unpack('I', self.fstruct[0x100*self.i+0xf8:0x100*self.i+0xfc])[0]
+                    self.fsize = struct.unpack('I', self.fstruct[0x100*self.i+0xfc:0x100*self.i+0x100])[0]
                 self.fname = self.fname.replace(b'\x00', b'').decode('cp1251')
-                self.foffset = struct.unpack('I', self.fstruct[0x40*self.i+0x38:0x40*self.i+0x3c])[0]
-                self.fsize = struct.unpack('I', self.fstruct[0x40*self.i+0x3c:0x40*self.i+0x40])[0]
-                self.files[self.i] = (self.fname, self.foffset, self.fsize)
-                print((self.fname, self.foffset, self.fsize))
+                self.f.seek(self.foffset)
+                self.fsizeunc = struct.unpack('I', self.f.read(4))[0]
+                self.files[self.i] = (self.fname, self.foffset, self.fsize, self.fsizeunc )
+                #print((self.fname, self.foffset, self.fsize))
 
     def unpack(self, d: str):
         """unpacks pack file to the given directory"""
